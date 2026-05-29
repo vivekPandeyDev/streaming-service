@@ -1,4 +1,4 @@
-Here is a clean `README.md` draft.
+
 
 # Secure HLS Streaming POC (Nginx + OpenResty + MinIO)
 
