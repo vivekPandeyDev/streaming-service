@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <title>MinIO HLS Streaming POC</title>
   </head>
+
   <body>
     <h2>Adaptive Streaming POC</h2>
 
@@ -14,71 +15,91 @@
 
     <br /><br />
 
-    <video id="video" controls width="800" height="800"></video>
+    <video id="video" controls width="800" height="500"></video>
 
     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
 
     <script>
       const video = document.getElementById("video");
       const qualitySelect = document.getElementById("quality");
+      // nginx protected URI
+      const uri = "/hls/sample/master.m3u8";
+      const videoUrl =`http://localhost:8084${uri}`;
+      // same nginx secret
+      const SECRET = "mysecret";
 
-      const videoUrl = "http://localhost:9000/media/sample/master.m3u8";
+      console.log("videoUrl=", videoUrl);
+      
+      function generateToken(uri) {
+        const expires = Math.floor(Date.now() / 1000) + 3600;
+        const raw = `${expires}${uri} ${SECRET}`;
+        const md5 = CryptoJS.MD5(raw);
+        const token = CryptoJS.enc.Base64.stringify(md5)
+          .replace(/\+/g, "-")
+          .replace(/\//g, "_")
+          .replace(/=+$/, "");
+        return { token, expires };
+      }
 
       if (Hls.isSupported()) {
+        console.log("Hls.js is supported, using JavaScript HLS player");
         const hls = new Hls({
           debug: false,
+          xhrSetup: function (xhr, url) {
+            const hlsUri = new URL(url).pathname;
+            const { token : hlsToken, expires : hlsExpires } = generateToken(hlsUri);
+            console.log("Generated token for", uri, "->", hlsToken, hlsExpires);
+            xhr.open(
+              "GET",
+              url + "?md5=" + hlsToken + "&expires=" + hlsExpires,
+              true,
+            );
+          },
         });
 
         hls.loadSource(videoUrl);
         hls.attachMedia(video);
 
-        // Manifest loaded
         hls.on(Hls.Events.MANIFEST_PARSED, function () {
           console.log("Manifest loaded");
-          console.log("Available levels:", hls.levels);
+          console.log("Levels:", hls.levels);
 
-          // Populate quality dropdown
           hls.levels.forEach((level, index) => {
             const option = document.createElement("option");
 
             option.value = index;
-            option.text = `${level.height}p (${Math.round(level.bitrate / 1000)} kbps)`;
+            option.text =
+              `${level.height}p ` +
+              `(${Math.round(level.bitrate / 1000)} kbps)`;
 
             qualitySelect.appendChild(option);
           });
 
-          // autoplay allowed if muted
           video.muted = true;
           video.play();
         });
 
-        // Automatic ABR switching logs
-        hls.on(Hls.Events.LEVEL_SWITCHED, function (event, data) {
+        hls.on(Hls.Events.LEVEL_SWITCHED, function (_, data) {
           const level = hls.levels[data.level];
 
-          console.log("Auto switched ->", level.height + "p");
+          console.log("Switched ->", level.height + "p");
         });
 
-        // Manual quality selection
         qualitySelect.addEventListener("change", function () {
           const selected = parseInt(this.value);
 
           if (selected === -1) {
-            // return to adaptive mode
             hls.currentLevel = -1;
-
-            console.log("Auto mode enabled");
+            console.log("Auto mode");
           } else {
-            // force selected quality
             hls.currentLevel = selected;
-
-            console.log("Manual quality ->", hls.levels[selected].height + "p");
+            console.log("Manual ->", hls.levels[selected].height + "p");
           }
         });
 
-        // Error logging
-        hls.on(Hls.Events.ERROR, function (event, data) {
-          console.error("HLS Error:", data);
+        hls.on(Hls.Events.ERROR, function (_, data) {
+          console.error("HLS error:", data);
         });
       } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
         // Safari native HLS
