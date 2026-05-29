@@ -1,4 +1,4 @@
-ffmpeg -i input.mp4 \
+ffmpeg -i input2.MP4 \
 -filter_complex "[0:v]split=2[v1][v2]" \
 -map [v1] -map a:0 \
 -c:v:0 libx264 -b:v:0 800k -s:v:0 640x360 \

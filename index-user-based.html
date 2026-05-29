@@ -6,7 +6,15 @@
   </head>
 
   <body>
-    <h2>Adaptive Streaming POC path based on Token</h2>
+    <h2>Adaptive Streaming POC</h2>
+
+    <label>Video:</label>
+    <select id="video-name">
+      <option value="sample">Sample</option>
+      <option value="outing">Outing</option>
+    </select>
+
+    <br /><br />
 
     <label>Quality:</label>
     <select id="quality">
@@ -22,27 +30,27 @@
 
     <script>
       const video = document.getElementById("video");
+
       const qualitySelect = document.getElementById("quality");
-      // nginx protected URI
-      const uri = "/hls/sample/master.m3u8";
-      const videoUrl = `http://localhost:8084${uri}`;
-      // same nginx secret
+
+      const videoSelect = document.getElementById("video-name");
+
+      // local POC only
       const SECRET = "mysecret";
-      const userId = "42";
+      const UID = "42";
 
-      console.log("videoUrl=", videoUrl);
+      let hls = null;
 
-      // Generate token using MD5 hash of expires + path + secret
       function generateToken(uri, uid) {
-        
         const expires = Math.floor(Date.now() / 1000) + 3600;
+
+        // prefix path
+        // /hls/sample
         const match = uri.match(/^\/hls\/[^/]+/);
 
         const securePath = match ? match[0] : uri;
 
         const raw = `${expires}${securePath}${uid} ${SECRET}`;
-
-        console.log("Raw string for token generation: ", raw);
 
         const md5 = CryptoJS.MD5(raw);
 
@@ -57,70 +65,94 @@
         };
       }
 
-      const { token, expires } = generateToken(uri, userId);
+      function loadVideo(videoName) {
+        // destroy previous player
+        if (hls) {
+          hls.destroy();
+          hls = null;
+        }
 
+        qualitySelect.innerHTML = '<option value="-1">Auto</option>';
 
-      if (Hls.isSupported()) {
-        console.log("Hls.js is supported, using JavaScript HLS player");
-        const hls = new Hls({
-          debug: false,
-          xhrSetup: function (xhr, url) {
-            console.log("Generated token for","->", token, expires);
-            xhr.open(
-              "GET",
-              url + "?md5=" + token + "&expires=" + expires + "&uid=" + userId,
-              true,
-            );
-          },
-        });
+        const uri = `/hls/${videoName}/master.m3u8`;
 
-        hls.loadSource(videoUrl);
-        hls.attachMedia(video);
+        const { token, expires } = generateToken(uri, UID);
 
-        hls.on(Hls.Events.MANIFEST_PARSED, function () {
-          console.log("Manifest loaded");
-          console.log("Levels:", hls.levels);
+        const urlParams = `uid=${UID}&md5=${token}&expires=${expires}`;
 
-          hls.levels.forEach((level, index) => {
-            const option = document.createElement("option");
+        const videoUrl = `http://localhost:8084${uri}?${urlParams}`;
 
-            option.value = index;
-            option.text =
-              `${level.height}p ` +
-              `(${Math.round(level.bitrate / 1000)} kbps)`;
+        console.log("videoUrl=", videoUrl);
 
-            qualitySelect.appendChild(option);
+        if (Hls.isSupported()) {
+          hls = new Hls({
+            debug: false,
           });
 
-          video.muted = true;
-          video.play();
-        });
+          // append auth to ALL requests
+          hls.config.xhrSetup = function (xhr, url) {
+            const separator = url.includes("?") ? "&" : "?";
 
-        hls.on(Hls.Events.LEVEL_SWITCHED, function (_, data) {
-          const level = hls.levels[data.level];
+            xhr.open("GET", url + separator + urlParams, true);
 
-          console.log("Switched ->", level.height + "p");
-        });
+            console.log("HLS request ->", url + separator + urlParams);
+          };
 
-        qualitySelect.addEventListener("change", function () {
-          const selected = parseInt(this.value);
+          hls.loadSource(videoUrl);
+          hls.attachMedia(video);
 
-          if (selected === -1) {
-            hls.currentLevel = -1;
-            console.log("Auto mode");
-          } else {
-            hls.currentLevel = selected;
-            console.log("Manual ->", hls.levels[selected].height + "p");
-          }
-        });
+          hls.on(Hls.Events.MANIFEST_PARSED, function () {
+            console.log("Manifest loaded");
 
-        hls.on(Hls.Events.ERROR, function (_, data) {
-          console.error("HLS error:", data);
-        });
-      } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
-        // Safari native HLS
-        video.src = videoUrl;
+            hls.levels.forEach((level, index) => {
+              const option = document.createElement("option");
+
+              option.value = index;
+
+              option.text =
+                `${level.height}p ` +
+                `(${Math.round(level.bitrate / 1000)} kbps)`;
+
+              qualitySelect.appendChild(option);
+            });
+
+            video.muted = true;
+            video.play();
+          });
+
+          qualitySelect.onchange = function () {
+            const selected = parseInt(this.value);
+
+            if (selected === -1) {
+              hls.currentLevel = -1;
+            } else {
+              hls.currentLevel = selected;
+            }
+          };
+
+          hls.on(Hls.Events.LEVEL_SWITCHED, (_, data) => {
+            const level = hls.levels[data.level];
+
+            console.log("Switched ->", level.height + "p");
+          });
+
+          hls.on(Hls.Events.ERROR, (_, data) => {
+            console.error("HLS error:", data);
+          });
+        } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+          video.src = videoUrl;
+        }
       }
+
+      // initial load
+      loadVideo(videoSelect.value);
+
+      // reload on change
+      videoSelect.addEventListener("change", function () {
+        console.log("Switching ->", this.value);
+
+        loadVideo(this.value);
+      });
     </script>
   </body>
 </html>
