@@ -1,0 +1,126 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>MinIO HLS Streaming POC</title>
+  </head>
+
+  <body>
+    <h2>Adaptive Streaming POC path based on Token</h2>
+
+    <label>Quality:</label>
+    <select id="quality">
+      <option value="-1">Auto</option>
+    </select>
+
+    <br /><br />
+
+    <video id="video" controls width="800" height="500"></video>
+
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
+
+    <script>
+      const video = document.getElementById("video");
+      const qualitySelect = document.getElementById("quality");
+      // nginx protected URI
+      const uri = "/hls/sample/master.m3u8";
+      const videoUrl = `http://localhost:8084${uri}`;
+      // same nginx secret
+      const SECRET = "mysecret";
+      const userId = "42";
+
+      console.log("videoUrl=", videoUrl);
+
+      // Generate token using MD5 hash of expires + path + secret
+      function generateToken(uri, uid) {
+        
+        const expires = Math.floor(Date.now() / 1000) + 3600;
+        const match = uri.match(/^\/hls\/[^/]+/);
+
+        const securePath = match ? match[0] : uri;
+
+        const raw = `${expires}${securePath}${uid} ${SECRET}`;
+
+        console.log("Raw string for token generation: ", raw);
+
+        const md5 = CryptoJS.MD5(raw);
+
+        const token = CryptoJS.enc.Base64.stringify(md5)
+          .replace(/\+/g, "-")
+          .replace(/\//g, "_")
+          .replace(/=+$/, "");
+
+        return {
+          token,
+          expires,
+        };
+      }
+
+      const { token, expires } = generateToken(uri, userId);
+
+
+      if (Hls.isSupported()) {
+        console.log("Hls.js is supported, using JavaScript HLS player");
+        const hls = new Hls({
+          debug: false,
+          xhrSetup: function (xhr, url) {
+            console.log("Generated token for","->", token, expires);
+            xhr.open(
+              "GET",
+              url + "?md5=" + token + "&expires=" + expires + "&uid=" + userId,
+              true,
+            );
+          },
+        });
+
+        hls.loadSource(videoUrl);
+        hls.attachMedia(video);
+
+        hls.on(Hls.Events.MANIFEST_PARSED, function () {
+          console.log("Manifest loaded");
+          console.log("Levels:", hls.levels);
+
+          hls.levels.forEach((level, index) => {
+            const option = document.createElement("option");
+
+            option.value = index;
+            option.text =
+              `${level.height}p ` +
+              `(${Math.round(level.bitrate / 1000)} kbps)`;
+
+            qualitySelect.appendChild(option);
+          });
+
+          video.muted = true;
+          video.play();
+        });
+
+        hls.on(Hls.Events.LEVEL_SWITCHED, function (_, data) {
+          const level = hls.levels[data.level];
+
+          console.log("Switched ->", level.height + "p");
+        });
+
+        qualitySelect.addEventListener("change", function () {
+          const selected = parseInt(this.value);
+
+          if (selected === -1) {
+            hls.currentLevel = -1;
+            console.log("Auto mode");
+          } else {
+            hls.currentLevel = selected;
+            console.log("Manual ->", hls.levels[selected].height + "p");
+          }
+        });
+
+        hls.on(Hls.Events.ERROR, function (_, data) {
+          console.error("HLS error:", data);
+        });
+      } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+        // Safari native HLS
+        video.src = videoUrl;
+      }
+    </script>
+  </body>
+</html>
