@@ -1,0 +1,33 @@
+FROM openresty/openresty:alpine
+
+RUN apk add --no-cache git curl perl
+
+RUN mkdir -p /usr/local/openresty/site/lualib/resty
+
+# aws signer
+RUN git clone https://github.com/GUI/lua-resty-aws-signature.git /tmp/aws-sign \
+ && cp /tmp/aws-sign/lib/resty/aws-signature.lua \
+    /usr/local/openresty/site/lualib/resty/ \
+ && rm -rf /tmp/aws-sign
+
+# hmac dependency
+RUN git clone https://github.com/jkeys089/lua-resty-hmac.git /tmp/hmac \
+ && cp /tmp/hmac/lib/resty/hmac.lua \
+    /usr/local/openresty/site/lualib/resty/ \
+ && rm -rf /tmp/hmac
+
+# string dependency
+RUN git clone https://github.com/openresty/lua-resty-string.git /tmp/string \
+ && cp /tmp/string/lib/resty/string.lua \
+    /usr/local/openresty/site/lualib/resty/ \
+ && rm -rf /tmp/string
+
+# PERMANENT MinIO patch
+RUN sed -i '/return nil, nil/i\
+  if host:match("^minio") then\
+    return "s3", os.getenv("AWS_REGION") or "us-east-1"\
+  end\
+' /usr/local/openresty/site/lualib/resty/aws-signature.lua
+
+RUN sed -i 's/get_sha256_digest(ngx.var.request_body)/get_sha256_digest(ngx.var.request_body or "")/' \
+/usr/local/openresty/site/lualib/resty/aws-signature.lua
