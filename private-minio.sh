@@ -1,0 +1,1 @@
+minio-mc anonymous set none local/media

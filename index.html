@@ -1,0 +1,89 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>MinIO HLS Streaming POC</title>
+  </head>
+  <body>
+    <h2>Adaptive Streaming POC</h2>
+
+    <label>Quality:</label>
+    <select id="quality">
+      <option value="-1">Auto</option>
+    </select>
+
+    <br /><br />
+
+    <video id="video" controls width="800" height="800"></video>
+
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+
+    <script>
+      const video = document.getElementById("video");
+      const qualitySelect = document.getElementById("quality");
+
+      const videoUrl = "http://localhost:9000/media/sample/master.m3u8";
+
+      if (Hls.isSupported()) {
+        const hls = new Hls({
+          debug: false,
+        });
+
+        hls.loadSource(videoUrl);
+        hls.attachMedia(video);
+
+        // Manifest loaded
+        hls.on(Hls.Events.MANIFEST_PARSED, function () {
+          console.log("Manifest loaded");
+          console.log("Available levels:", hls.levels);
+
+          // Populate quality dropdown
+          hls.levels.forEach((level, index) => {
+            const option = document.createElement("option");
+
+            option.value = index;
+            option.text = `${level.height}p (${Math.round(level.bitrate / 1000)} kbps)`;
+
+            qualitySelect.appendChild(option);
+          });
+
+          // autoplay allowed if muted
+          video.muted = true;
+          video.play();
+        });
+
+        // Automatic ABR switching logs
+        hls.on(Hls.Events.LEVEL_SWITCHED, function (event, data) {
+          const level = hls.levels[data.level];
+
+          console.log("Auto switched ->", level.height + "p");
+        });
+
+        // Manual quality selection
+        qualitySelect.addEventListener("change", function () {
+          const selected = parseInt(this.value);
+
+          if (selected === -1) {
+            // return to adaptive mode
+            hls.currentLevel = -1;
+
+            console.log("Auto mode enabled");
+          } else {
+            // force selected quality
+            hls.currentLevel = selected;
+
+            console.log("Manual quality ->", hls.levels[selected].height + "p");
+          }
+        });
+
+        // Error logging
+        hls.on(Hls.Events.ERROR, function (event, data) {
+          console.error("HLS Error:", data);
+        });
+      } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+        // Safari native HLS
+        video.src = videoUrl;
+      }
+    </script>
+  </body>
+</html>
