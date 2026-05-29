@@ -74,7 +74,7 @@
 
         qualitySelect.innerHTML = '<option value="-1">Auto</option>';
 
-        const uri = `/hls/${videoName}/master.m3u8`;
+        const uri = `/hls/processed/${videoName}/master.m3u8`;
 
         const { token, expires } = generateToken(uri, UID);
 

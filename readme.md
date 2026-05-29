@@ -1,5 +1,3 @@
-
-
 # Secure HLS Streaming POC (Nginx + OpenResty + MinIO)
 
 This project demonstrates secure HLS streaming using:
@@ -264,5 +262,3 @@ until expiry.
 ```bash
 docker compose down
 ```
-
-This version is ready to save as `README.md`.
