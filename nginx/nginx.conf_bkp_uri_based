@@ -21,15 +21,9 @@ http {
 
         location /hls/ {
 
-            # extract /hls/<video-id>
-            set $secure_path "";
-
-            if ($uri ~ "^(/hls/[^/]+)") {
-                set $secure_path $1;
-            }
-
             secure_link $arg_md5,$arg_expires;
-            secure_link_md5 "$secure_link_expires$secure_path mysecret";            
+            secure_link_md5
+                "$secure_link_expires$uri mysecret";
 
             if ($secure_link = "") {
                 return 403;
